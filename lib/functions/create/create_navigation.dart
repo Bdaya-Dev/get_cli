@@ -1,46 +1,54 @@
+import 'dart:convert';
 import 'dart:io';
 
-import 'package:get_cli/common/utils/logger/LogUtils.dart';
-import 'package:get_cli/core/structure.dart';
-import 'package:get_cli/samples/impl/arctekko/arc_navigation.dart';
 import 'package:recase/recase.dart';
 
-Future<void> createNavigation() async {
-  await ArcNavigationSample().create();
+import '../../common/utils/logger/log_utils.dart';
+import '../../core/internationalization.dart';
+import '../../core/locales.g.dart';
+import '../../core/structure.dart';
+import '../../samples/impl/arctekko/arc_navigation.dart';
+import '../formatter_dart_file/frommatter_dart_file.dart';
+import 'create_single_file.dart';
+
+void createNavigation() {
+  ArcNavigationSample().create(skipFormatter: true);
 }
 
-Future<void> addNavigation(String name) async {
-  File navigationFile = File(Structure.replaceAsExpected(
+void addNavigation(String name) {
+  var navigationFile = File(Structure.replaceAsExpected(
       path: 'lib/infrastructure/navigation/navigation.dart'));
-  if (!await navigationFile.exists()) {
-    await createNavigation();
+
+  List<String> lines;
+
+  if (!navigationFile.existsSync()) {
+    createNavigation();
+    lines = navigationFile.readAsLinesSync();
+  } else {
+    var content = formatterDartFile(navigationFile.readAsStringSync());
+    lines = LineSplitter.split(content).toList();
   }
-  var lines = await navigationFile.readAsLinesSync();
+  navigationFile.readAsLinesSync();
 
   while (lines.last.isEmpty) {
     lines.removeLast();
   }
-  if (lines.last.trim() != '}') {
-    lines.last = lines.last.replaceAll('}', '');
-    lines.add('}');
-  }
-  int indexStartNavClass = lines.indexWhere(
+
+  var indexStartNavClass = lines.indexWhere(
     (line) => line.contains('class Nav'),
   );
-  int index =
+  var index =
       lines.indexWhere((element) => element.contains('];'), indexStartNavClass);
-  if (lines[index].trim() != '];') {
-    lines[index] = lines[index].replaceAll('];', '');
-    index++;
-    lines.insert(index, '  ];');
-  }
 
   lines.insert(index, '''    GetPage(
       name: Routes.${name.snakeCase.toUpperCase()},
       page: () => ${name.pascalCase}Screen(),
-      binding: ${name.pascalCase}ControllerBinding()
+      binding: ${name.pascalCase}ControllerBinding(),
     ),    ''');
 
-  await navigationFile.writeAsStringSync(lines.join('\n'));
-  LogService.success('${name.pascalCase} navigation added successfully.');
+  writeFile(navigationFile.path, lines.join('\n'),
+      overwrite: true, logger: false);
+
+  LogService.success(Translation(
+      LocaleKeys.sucess_navigation_added.trArgs([name.pascalCase])));
 }

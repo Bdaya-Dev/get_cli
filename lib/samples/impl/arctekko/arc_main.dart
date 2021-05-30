@@ -1,10 +1,10 @@
-import 'package:get_cli/samples/interface/sample_interface.dart';
+import '../../interface/sample_interface.dart';
 
 class ArcMainSample extends Sample {
   ArcMainSample() : super('lib/main.dart', overwrite: true);
 
   @override
-  Future<String> get content async => '''import 'package:flutter/material.dart';
+  String get content => '''import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import 'infrastructure/navigation/navigation.dart';

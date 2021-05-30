@@ -1,9 +1,11 @@
 import 'dart:io';
 
-Directory findFolderByName(String name) {
-  Directory current = Directory('./lib');
-  final list = current.listSync(recursive: true, followLinks: false);
-  Directory contains = list.firstWhere((element) {
+/// find a folder from the name in the lib folder
+Directory? findFolderByName(String name) {
+  var current = Directory('./lib');
+  final List<FileSystemEntity?> list =
+      current.listSync(recursive: true, followLinks: false);
+  var contains = list.firstWhere((element) {
     //Fix erro ao encontrar arquivo com nome
     if (element is Directory) {
       return element.path.contains(name);
@@ -12,5 +14,5 @@ Directory findFolderByName(String name) {
   }, orElse: () {
     return null;
   });
-  return contains;
+  return contains as Directory?;
 }

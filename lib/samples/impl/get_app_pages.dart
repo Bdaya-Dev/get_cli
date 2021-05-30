@@ -1,23 +1,23 @@
-import 'package:get_cli/samples/interface/sample_interface.dart';
+import '../../common/utils/pubspec/pubspec_utils.dart';
+import '../interface/sample_interface.dart';
 
+/// [Sample] file from [app_pages] file creation.
 class AppPagesSample extends Sample {
   String initial;
-  String import;
   AppPagesSample(
-      {String path = 'lib/app/routes/app_pages.dart',
-      this.import = '''import 'package:get/get.dart';''',
-      this.initial = 'HOME'})
+      {String path = 'lib/app/routes/app_pages.dart', this.initial = 'HOME'})
       : super(path);
-
-  String get _initial =>
-      initial != null ? '\nstatic const INITIAL = Routes.$initial;' : '';
+  final import = PubspecUtils.getPackageImport;
+  String get _initialRoute =>
+      initial.isNotEmpty ? '\nstatic const INITIAL = Routes.$initial;' : '';
 
   @override
-  Future<String> get content async => '''$import
+  String get content => '''$import
 part 'app_routes.dart';
 
 class AppPages {
-  $_initial
+   AppPages._();
+  $_initialRoute
 
   static final routes = [
   ];

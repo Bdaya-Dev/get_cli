@@ -1,4 +1,4 @@
-import 'package:get_cli/samples/interface/sample_interface.dart';
+import '../../interface/sample_interface.dart';
 
 class ArcRouteSample extends Sample {
   String initial;
@@ -6,7 +6,7 @@ class ArcRouteSample extends Sample {
       {String path = 'lib/infrastructure/navigation/routes.dart'})
       : super(path);
   @override
-  Future<String> get content async => '''
+  String get content => '''
 class Routes {
   static Future<String> get initialRoute async {
     // TODO: implement method

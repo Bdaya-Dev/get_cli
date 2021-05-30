@@ -1,29 +1,34 @@
-import 'package:get_cli/samples/interface/sample_interface.dart';
+import '../interface/sample_interface.dart';
 
 class GenerateLocalesSample extends Sample {
-  String translationsKeys;
-  String keys;
-  String locales;
-  GenerateLocalesSample(this.keys, this.locales, this.translationsKeys)
-      : super('lib/generated/locales.g.dart', overwrite: true);
+  final String _translationsKeys;
+  final String _keys;
+  final String _locales;
+  GenerateLocalesSample(this._keys, this._locales, this._translationsKeys,
+      {String path = 'lib/generated/locales.g.dart'})
+      : super(path, overwrite: true);
 
   @override
-  Future<String> get content async => '''
+  String get content => '''
 // DO NOT EDIT. This is code generated via package:get_cli/get_cli.dart
 
-abstract class AppTranslation {
+// ignore_for_file: lines_longer_than_80_chars
+// ignore: avoid_classes_with_only_static_members
+class AppTranslation {
 
-  static Map<String, Map<String, String>> translations = {
-$translationsKeys
-  };
+\tstatic Map<String, Map<String, String>> translations = {
+$_translationsKeys
+\t};
 
 }
-abstract class LocaleKeys {
-$keys
+
+class LocaleKeys {
+LocaleKeys._();
+$_keys
 }
 
-abstract class Locales {
-  $locales
+class Locales {
+\t$_locales
 }
 ''';
 }

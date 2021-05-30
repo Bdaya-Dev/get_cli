@@ -1,18 +1,24 @@
 import 'dart:io';
 
-import 'package:get_cli/commands/impl/commads_export.dart';
-import 'package:get_cli/commands/impl/install/install_get.dart';
-import 'package:get_cli/common/utils/logger/LogUtils.dart';
-import 'package:get_cli/core/structure.dart';
-import 'package:get_cli/functions/create/create_list_directory.dart';
-import 'package:get_cli/functions/create/create_main.dart';
-import 'package:get_cli/samples/impl/arctekko/arc_main.dart';
+import '../../../../common/utils/logger/log_utils.dart';
+import '../../../../common/utils/pubspec/pubspec_utils.dart';
+import '../../../../core/internationalization.dart';
+import '../../../../core/locales.g.dart';
+import '../../../../core/structure.dart';
+import '../../../../functions/create/create_list_directory.dart';
+import '../../../../functions/create/create_main.dart';
+import '../../../../samples/impl/arctekko/arc_main.dart';
+import '../../../../samples/impl/arctekko/config_example.dart';
+import '../../commads_export.dart';
+import '../../install/install_get.dart';
 
 Future<void> createInitKatekko() async {
-  bool canContinue = await createMain();
+  var canContinue = await createMain();
   if (!canContinue) return;
-
-  List<Directory> initialDirs = [
+  if (!PubspecUtils.isServerProject) {
+    await installGet();
+  }
+  var initialDirs = [
     Directory(Structure.replaceAsExpected(path: 'lib/domain/core/interfaces/')),
     Directory(Structure.replaceAsExpected(
         path: 'lib/infrastructure/navigation/bindings/controllers/')),
@@ -25,13 +31,12 @@ Future<void> createInitKatekko() async {
     Directory(Structure.replaceAsExpected(path: 'lib/presentation/')),
     Directory(Structure.replaceAsExpected(path: 'lib/infrastructure/theme/')),
   ];
+  ArcMainSample().create();
+  ConfigExampleSample().create();
   await Future.wait([
-    ArcMainSample().create(),
     CreateScreenCommand().execute(),
-    createListDirectory(initialDirs),
   ]);
+  createListDirectory(initialDirs);
 
-  await installGet();
-
-  LogService.success('CLEAN Pattern structure successfully generated.');
+  LogService.success(Translation(LocaleKeys.sucess_clean_Pattern_generated).tr);
 }

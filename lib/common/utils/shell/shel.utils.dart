@@ -1,80 +1,80 @@
 import 'dart:io';
 
-import 'package:get_cli/common/utils/logger/LogUtils.dart';
-import 'package:get_cli/common/utils/pub_dev/pub_dev_api.dart';
-import 'package:get_cli/common/utils/pubspec/pubspec_lock.dart';
-import 'package:get_cli/core/generator.dart';
-import 'package:process_run/process_run.dart';
+import 'package:process_run/shell_run.dart';
+
+import '../../../core/generator.dart';
+import '../../../core/internationalization.dart';
+import '../../../core/locales.g.dart';
+import '../logger/log_utils.dart';
+import '../pub_dev/pub_dev_api.dart';
+import '../pubspec/pubspec_lock.dart';
 
 class ShellUtils {
-  static void pubGet() async {
+  static Future<void> pubGet() async {
     LogService.info('Running `flutter pub get` …');
-    await run('flutter', ['pub', 'get'], verbose: true);
+    await run('flutter pub get', verbose: true);
   }
 
-  static void flutterCreate(String path, String org) async {
+  static Future<void> activatedNullSafe() async {
+    await pubGet();
+    await run('dart migrate --apply-changes --skip-import-check',
+        verbose: true);
+  }
+
+  static Future<void> flutterCreate(
+    String path,
+    String? org,
+    String iosLang,
+    String androidLang,
+  ) async {
     LogService.info('Running `flutter create $path` …');
-    await run('flutter', ['create', '--org', org, path], verbose: true);
+
+    await run(
+        'flutter create --no-pub -i $iosLang -a $androidLang --org $org $path',
+        verbose: true);
   }
 
-  static void update() async {
-    bool isGit = GetCli.arguments.contains('--git');
-    String versionInPubDev =
-        await PubDevApi.getLatestVersionFromPackage('get_cli');
-    String versionInstalled = await PubspecLock.getVersionCli(disableLog: true);
-    if (versionInstalled == versionInPubDev) {
-      return LogService.info('Latest version of get_cli already installed');
+  static Future<void> update(
+      [bool isGit = false, bool forceUpdate = false]) async {
+    isGit = GetCli.arguments.contains('--git');
+    forceUpdate = GetCli.arguments.contains('-f');
+    if (!isGit && !forceUpdate) {
+      var versionInPubDev =
+          await PubDevApi.getLatestVersionFromPackage('get_cli');
+
+      var versionInstalled = await PubspecLock.getVersionCli(disableLog: true);
+
+      if (versionInstalled == versionInPubDev) {
+        return LogService.info(
+            Translation(LocaleKeys.info_cli_last_version_already_installed.tr)
+                .toString());
+      }
     }
+
     LogService.info('Upgrading get_cli …');
-    var res;
-    if (Platform.script.path.contains('flutter')) {
-      if (isGit) {
-        res = await run(
-            'flutter',
-            [
-              'pub',
-              'global',
-              'activate',
-              '-sgit',
-              'https://github.com/jonataslaw/get_cli/'
-            ],
-            verbose: true);
+
+    try {
+      if (Platform.script.path.contains('flutter')) {
+        if (isGit) {
+          await run(
+              'flutter pub global activate -sgit https://github.com/jonataslaw/get_cli/',
+              verbose: true);
+        } else {
+          await run('flutter pub global activate get_cli', verbose: true);
+        }
       } else {
-        res = await run(
-            'flutter',
-            [
-              'pub',
-              'global',
-              'activate',
-              'get_cli',
-            ],
-            verbose: true);
+        if (isGit) {
+          await run(
+              'flutter pub global activate -sgit https://github.com/jonataslaw/get_cli/',
+              verbose: true);
+        } else {
+          await run('flutter pub global activate get_cli', verbose: true);
+        }
       }
-    } else {
-      if (isGit) {
-        res = await run(
-            'pub',
-            [
-              'global',
-              'activate',
-              '-sgit',
-              'https://github.com/jonataslaw/get_cli/'
-            ],
-            verbose: true);
-      } else {
-        res = await run(
-            'pub',
-            [
-              'global',
-              'activate',
-              'get_cli',
-            ],
-            verbose: true);
-      }
+      return LogService.success(LocaleKeys.sucess_update_cli.tr);
+    } on Exception catch (err) {
+      LogService.info(err.toString());
+      return LogService.error(LocaleKeys.error_update_cli.tr);
     }
-    if (res.stderr.toString().isNotEmpty) {
-      return LogService.error('There was an error upgrading get_cli');
-    }
-    LogService.success('Upgrade complete');
   }
 }

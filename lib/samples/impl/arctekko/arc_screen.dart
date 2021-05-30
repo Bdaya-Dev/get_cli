@@ -1,16 +1,17 @@
-import 'package:get_cli/samples/interface/sample_interface.dart';
 import 'package:recase/recase.dart';
+
+import '../../interface/sample_interface.dart';
 
 //Usei arc pra fazer referencia a clean do katekko
 class ArcScreenSample extends Sample {
-  String fileName;
+  late String fileName;
   bool isExample;
   ArcScreenSample(String path, String fileName,
       {bool overwrite = false, this.isExample = false})
       : super(path, overwrite: overwrite);
 
   @override
-  Future<String> get content async => !isExample
+  String get content => !isExample
       ? '''import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 

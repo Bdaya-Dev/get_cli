@@ -1,92 +1,140 @@
 import 'dart:io';
 
+import 'package:cli_dialog/cli_dialog.dart';
 import 'package:cli_menu/cli_menu.dart';
-import 'package:get_cli/commands/impl/create/create.dart';
-import 'package:get_cli/commands/interface/command.dart';
-import 'package:get_cli/common/utils/logger/LogUtils.dart';
-import 'package:get_cli/common/utils/pubspec/pubspec_utils.dart';
-import 'package:get_cli/core/generator.dart';
-import 'package:get_cli/core/structure.dart';
-import 'package:get_cli/functions/routes/get_add_route.dart';
-import 'package:get_cli/models/file_model.dart';
-import 'package:get_cli/samples/impl/get_binding.dart';
-import 'package:get_cli/samples/impl/get_controller.dart';
-import 'package:get_cli/samples/impl/get_view.dart';
 import 'package:recase/recase.dart';
 
-class CreatePageCommand extends Command with CreateMixin {
+import '../../../../common/utils/logger/log_utils.dart';
+import '../../../../common/utils/pubspec/pubspec_utils.dart';
+import '../../../../core/generator.dart';
+import '../../../../core/internationalization.dart';
+import '../../../../core/locales.g.dart';
+import '../../../../core/structure.dart';
+import '../../../../functions/create/create_single_file.dart';
+import '../../../../functions/routes/get_add_route.dart';
+import '../../../../samples/impl/get_binding.dart';
+import '../../../../samples/impl/get_controller.dart';
+import '../../../../samples/impl/get_view.dart';
+import '../../../interface/command.dart';
+
+/// The command create a Binding and Controller page and view
+class CreatePageCommand extends Command {
+  @override
+  String get commandName => 'page';
+
+  @override
+  List<String> get alias => ['module', '-p', '-m'];
   @override
   Future<void> execute() async {
-    bool isProject = false;
-    if (GetCli.arguments[0] == 'create') {
+    var isProject = false;
+    if (GetCli.arguments[0] == 'create' || GetCli.arguments[0] == '-c') {
       isProject = GetCli.arguments[1].split(':').first == 'project';
     }
-    FileModel _fileModel =
-        Structure.model(isProject ? 'home' : name, 'page', true, on: onCommand);
-    if (File(_fileModel.path + '_view.dart').existsSync() ||
-        File(_fileModel.path + '_binding.dart').existsSync() ||
-        File(_fileModel.path + '_controller.dart').existsSync()) {
+    var name = this.name;
+    if (name.isEmpty || isProject) {
+      name = 'home';
+    }
+    checkForAlreadyExists(name);
+  }
+
+  @override
+  String? get hint => LocaleKeys.hint_create_page.tr;
+
+  @override
+  bool validate() => super.validate();
+
+  void checkForAlreadyExists(String? name) {
+    var _fileModel =
+        Structure.model(name, 'page', true, on: onCommand, folderName: name);
+    var pathSplit = Structure.safeSplitPath(_fileModel.path!);
+
+    pathSplit.removeLast();
+    var path = pathSplit.join('/');
+    path = Structure.replaceAsExpected(path: path);
+    if (Directory(path).existsSync()) {
       LogService.info(
-          'The page [$name] already exists, do you want to overwrite it?');
-      final menu = Menu(['Yes', 'No']);
+          Translation(LocaleKeys.ask_existing_page.trArgs([name])).toString());
+      final menu = Menu([
+        LocaleKeys.options_yes.tr,
+        LocaleKeys.options_no.tr,
+        LocaleKeys.options_rename.tr,
+      ]);
       final result = menu.choose();
       if (result.index == 0) {
-        await _writeFiles(_fileModel, isProject ? 'home' : name,
-            overwrite: true);
+        _writeFiles(path, name!, overwrite: true);
+      } else if (result.index == 2) {
+        final dialog = CLI_Dialog();
+        dialog.addQuestion(LocaleKeys.ask_new_page_name.tr, 'name');
+        name = dialog.ask()['name'] as String?;
+
+        checkForAlreadyExists(name!.trim().snakeCase);
       }
     } else {
-      await _writeFiles(_fileModel, isProject ? 'home' : name,
-          overwrite: false);
+      Directory(path).createSync(recursive: true);
+      _writeFiles(path, name!, overwrite: false);
     }
   }
 
-  @override
-  String get hint => 'Use to generate pages';
+  void _writeFiles(String path, String name, {bool overwrite = false}) {
+    var isServer = PubspecUtils.isServerProject;
+    var extraFolder = PubspecUtils.extraFolder ?? true;
+    var controllerFile = handleFileCreate(
+      name,
+      'controller',
+      path,
+      extraFolder,
+      ControllerSample(
+        '',
+        name,
+        isServer,
+        overwrite: overwrite,
+      ),
+      'controllers',
+    );
+    var controllerDir = Structure.pathToDirImport(controllerFile.path);
+    var viewFile = handleFileCreate(
+      name,
+      'view',
+      path,
+      extraFolder,
+      GetViewSample(
+        '',
+        '${name.pascalCase}View',
+        '${name.pascalCase}Controller',
+        controllerDir,
+        isServer,
+        overwrite: overwrite,
+      ),
+      'views',
+    );
+    var bindingFile = handleFileCreate(
+      name,
+      'binding',
+      path,
+      extraFolder,
+      BindingSample(
+        '',
+        name,
+        '${name.pascalCase}Binding',
+        controllerDir,
+        isServer,
+        overwrite: overwrite,
+      ),
+      'bindings',
+    );
 
-  @override
-  bool validate() {
-    return true;
+    addRoute(
+      name,
+      Structure.pathToDirImport(bindingFile.path),
+      Structure.pathToDirImport(viewFile.path),
+    );
+    LogService.success(
+        LocaleKeys.sucess_page_create.trArgs([name.pascalCase]));
   }
 
-  Future<void> _writeFiles(FileModel _fileModel, String name,
-      {bool overwrite = false}) async {
-    List<String> pathSplit = Structure.safeSplitPath(_fileModel.path);
-    pathSplit.remove('.');
-    pathSplit.remove('lib');
-    String path = pathSplit.join('/');
-    print(path);
+  @override
+  String get codeSample => 'get create page:product';
 
-    String controllerDir = path + '_controller.dart';
-
-    bool isServer = PubspecUtils.isServerProject;
-
-    await ControllerSample(
-      _fileModel.path + '_controller.dart',
-      name,
-      isServer,
-      overwrite: overwrite,
-    ).create();
-
-    await BindingSample(
-      _fileModel.path + '_binding.dart',
-      name,
-      name.pascalCase + 'Binding',
-      controllerDir,
-      isServer,
-      overwrite: overwrite,
-    ).create();
-
-    await GetViewSample(
-            _fileModel.path + '_view.dart',
-            name.pascalCase + 'View',
-            name.pascalCase + 'Controller',
-            controllerDir,
-            isServer,
-            overwrite: overwrite)
-        .create();
-
-    await addRoute(name, path);
-    LogService.success(name.pascalCase + ' page created successfully.');
-    return;
-  }
+  @override
+  int get maxParameters => 0;
 }

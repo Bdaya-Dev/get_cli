@@ -1,56 +1,58 @@
+import 'dart:convert';
 import 'dart:io';
 
-import 'package:get_cli/common/utils/logger/LogUtils.dart';
-import 'package:get_cli/core/structure.dart';
-import 'package:get_cli/functions/create/create_navigation.dart';
-import 'package:get_cli/samples/impl/arctekko/arc_routes.dart';
 import 'package:recase/recase.dart';
 
-Future<void> arcAddRoute(String nameRoute) async {
-  File routesFile = File(Structure.replaceAsExpected(
+import '../../common/utils/logger/log_utils.dart';
+import '../../core/internationalization.dart';
+import '../../core/locales.g.dart';
+import '../../core/structure.dart';
+import '../../samples/impl/arctekko/arc_routes.dart';
+import '../create/create_navigation.dart';
+import '../create/create_single_file.dart';
+import '../formatter_dart_file/frommatter_dart_file.dart';
+
+void arcAddRoute(String nameRoute) {
+  var routesFile = File(Structure.replaceAsExpected(
       path: 'lib/infrastructure/navigation/routes.dart'));
-  if (!await routesFile.exists()) {
-    await ArcRouteSample(nameRoute.snakeCase.toUpperCase()).create();
-    //await createRoute(isArc: true, initial: nameRoute.snakeCase.toUpperCase());
+  var lines = <String>[];
+  if (!routesFile.existsSync()) {
+    ArcRouteSample(nameRoute.snakeCase.toUpperCase()).create();
+    lines = routesFile.readAsLinesSync();
+  } else {
+    var content = formatterDartFile(routesFile.readAsStringSync());
+    lines = LineSplitter.split(content).toList();
   }
-  List<String> lines = await routesFile.readAsLines();
-  String line =
-      '  static const ${nameRoute.snakeCase.toUpperCase()} = \'/${nameRoute.snakeCase.toLowerCase().replaceAll('_', '-')}\';';
+
+  var line =
+      'static const ${nameRoute.snakeCase.toUpperCase()} = \'/${nameRoute.snakeCase.toLowerCase().replaceAll('_', '-')}\';';
   if (lines.contains(line)) {
     return;
   }
   while (lines.last.isEmpty) {
-    /* remover as linhas em branco no final do arquivo 
-    gerada pelo o visual studio e outras ide
-    */
     lines.removeLast();
-  }
-// Caso a útima linha seja uma rota exemplo:  static const HOME = '/HOME';}
-// diferente do esperado
-  if (lines.last.trim() != '}') {
-    lines.last = lines.last.replaceAll('}', '');
-    lines.add('}');
   }
 
   lines.add(line);
 
   _routesSort(lines);
 
-  await routesFile.writeAsStringSync(lines.join('\n'));
-  LogService.success('${nameRoute} route created successfully.');
-  await addNavigation(nameRoute);
+  writeFile(routesFile.path, lines.join('\n'), overwrite: true);
+  LogService.success(
+      Translation(LocaleKeys.sucess_route_created).trArgs([nameRoute]));
+  addNavigation(nameRoute);
 }
 
 List<String> _routesSort(List<String> lines) {
   var routes = <String>[];
   var lines2 = <String>[];
   lines2.addAll(lines);
-  lines2.forEach((line) {
+  for (var line in lines2) {
     if (line.contains('static const')) {
       routes.add('$line');
       lines.remove(line);
     }
-  });
+  }
   routes.sort();
   lines.insertAll(lines.length - 1, routes);
   return lines;

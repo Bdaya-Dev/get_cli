@@ -1,76 +1,109 @@
 import 'dart:io';
 
 import 'package:cli_dialog/cli_dialog.dart';
-import 'package:get_cli/commands/impl/generate/generate.dart';
-import 'package:get_cli/commands/interface/command.dart';
-import 'package:get_cli/common/utils/json_serialize/model_generator.dart';
-import 'package:get_cli/common/utils/logger/LogUtils.dart';
-import 'package:get_cli/core/structure.dart';
-import 'package:get_cli/functions/create/create_single_file.dart';
-import 'package:get_cli/functions/find_file/find_folder_by_directory.dart';
-import 'package:get_cli/models/file_model.dart';
 import 'package:http/http.dart';
-import 'package:path/path.dart';
+import 'package:path/path.dart' as p;
 import 'package:recase/recase.dart';
 
-class GenerateModelCommand extends Command with GenerateMixin {
+import '../../../../common/utils/json_serialize/model_generator.dart';
+import '../../../../common/utils/logger/log_utils.dart';
+import '../../../../core/internationalization.dart';
+import '../../../../core/locales.g.dart';
+import '../../../../core/structure.dart';
+import '../../../../exception_handler/exceptions/cli_exception.dart';
+import '../../../../functions/create/create_single_file.dart';
+import '../../../../models/file_model.dart';
+import '../../../../samples/impl/get_provider.dart';
+import '../../../interface/command.dart';
+
+class GenerateModelCommand extends Command {
+  @override
+  String get commandName => 'model';
   @override
   Future<void> execute() async {
-    String name = basenameWithoutExtension(withArgument ?? '').pascalCase;
-    if (withArgument == null) {
+    var name = p.basenameWithoutExtension(withArgument).pascalCase;
+    if (withArgument.isEmpty) {
       final dialog = CLI_Dialog(questions: [
-        [
-          'Could not set the model name automatically, which name do you want to use?',
-          'name'
-        ]
+        [LocaleKeys.ask_model_name.tr, 'name']
       ]);
-      String result = dialog.ask()['name'];
+      var result = dialog.ask()['name'] as String;
       name = result.pascalCase;
     }
+
     FileModel _fileModel;
-    final classGenerator = ModelGenerator(name);
-    if (findFolderByName('models') != null) {
-      _fileModel =
-          Structure.model(name, 'generate_model', false, on: on ?? 'models');
-    } else {
-      _fileModel = Structure.model(name, 'generate_model', false, on: on);
+    final classGenerator = ModelGenerator(
+        name, containsArg('--private'), containsArg('--withCopy'));
+
+    _fileModel = Structure.model(name, 'model', false, on: onCommand);
+
+    var dartCode = classGenerator.generateDartClasses(await _jsonRawData);
+
+    var modelPath = '${_fileModel.path}_model.dart';
+
+    var model = writeFile(modelPath, dartCode.result, overwrite: true);
+
+    for (var warning in dartCode.warnings) {
+      LogService.info('warning: ${warning.path} ${warning.warning} ');
     }
-
-    DartCode dartCode = classGenerator.generateDartClasses(await _jsonRawData);
-
-    await writeFile(_fileModel.path + '_model.dart', dartCode.result,
-        overwrite: true);
-    dartCode.warnings.forEach((warning) =>
-        LogService.info('warning: ${warning.path} ${warning.warning} '));
+    if (!containsArg('--skipProvider')) {
+      var pathSplit = Structure.safeSplitPath(modelPath);
+      pathSplit.removeWhere((element) => element == '.' || element == 'lib');
+      handleFileCreate(
+        name,
+        'provider',
+        onCommand,
+        true,
+        ProviderSample(
+          name,
+          createEndpoints: true,
+          modelPath: Structure.pathToDirImport(model.path),
+        ),
+        'providers',
+      );
+    }
   }
 
   @override
-  String get hint => 'generate Class model from json';
+  String? get hint => LocaleKeys.hint_generate_model.tr;
 
   @override
   bool validate() {
-    if ((withArgument == null || extension(withArgument) != '.json') &&
-        fromArgument == null) {
-      LogService.error('Enter a path to json file');
-
-      LogService.info(
-          'example: \n get generate model on home with assets/models/user.json');
-      return false;
+    if ((withArgument.isEmpty || p.extension(withArgument) != '.json') &&
+        fromArgument.isEmpty) {
+      var codeSample =
+          'get generate model on home with assets/models/user.json';
+      throw CliException(LocaleKeys.error_invalid_json.trArgs([withArgument]),
+          codeSample: codeSample);
     }
     return true;
   }
 
   Future<String> get _jsonRawData async {
-    if (withArgument != null) {
+    if (withArgument.isNotEmpty) {
       return await File(withArgument).readAsString();
     } else {
       try {
-        var result = await get(fromArgument).then((value) => value);
+        var result = await get(Uri.parse(fromArgument));
         return result.body;
-      } catch (e) {
-        LogService.error('failed to receive json from $fromArgument');
-        return null;
+      } on Exception catch (_) {
+        throw CliException(
+            LocaleKeys.error_failed_to_connect.trArgs([fromArgument]));
       }
     }
   }
+
+  final String? codeSample1 = LogService.code(
+      'get generate model on home with assets/models/user.json');
+  final String? codeSample2 = LogService.code(
+      'get generate model on home from "https://api.github.com/users/CpdnCristiano"');
+
+  @override
+  String get codeSample => '''
+  $codeSample1
+  or
+  $codeSample2
+''';
+
+  @override
+  int get maxParameters => 0;
 }

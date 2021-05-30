@@ -1,29 +1,35 @@
 import 'dart:convert';
-import 'package:get_cli/common/utils/logger/LogUtils.dart';
+import 'dart:io';
+
 import 'package:http/http.dart';
 
+import '../../../core/internationalization.dart';
+import '../../../core/locales.g.dart';
+import '../logger/log_utils.dart';
+
 class PubDevApi {
-  //Find latest version in the Pub Dev.
-  /* static Future<String> getLatestVersionFromPackage(String package) async {
-    var res = await get('https://pub.dev/packages/$package/install');
-    var document = parse(res.body);
-    var divElement =
-        document.getElementsByClassName('language-yaml').first.text;
-    var packageDetails = divElement.split(':');
-
-    return packageDetails.last.trim();
-  } */
-
-  static Future<String> getLatestVersionFromPackage(String package) async {
-    var res = await get('https://pub.dev/api/packages/$package').then((value) {
+  static Future<String?> getLatestVersionFromPackage(String package) async {
+    final languageCode = Platform.localeName.split('_')[0];
+    final pubSite = languageCode == 'zh'
+        ? 'https://pub.flutter-io.cn/api/packages/$package'
+        : 'https://pub.dev/api/packages/$package';
+    var uri = Uri.parse(pubSite);
+    try {
+      var value = await get(uri);
       if (value.statusCode == 200) {
-        return json.decode(value.body)['latest']['version'];
+        final version = json.decode(value.body)['latest']['version'] as String?;
+        return version;
       } else if (value.statusCode == 404) {
-        LogService.info('Package: $package not found in pub.dev');
+        LogService.info(
+          LocaleKeys.error_package_not_found.trArgs([package]),
+          false,
+          false,
+        );
       }
       return null;
-    });
-
-    return res;
+    } on Exception catch (err) {
+      LogService.error(err.toString());
+      return null;
+    }
   }
 }

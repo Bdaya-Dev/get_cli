@@ -1,64 +1,68 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:get_cli/commands/interface/command.dart';
-import 'package:get_cli/common/utils/logger/LogUtils.dart';
-import 'package:get_cli/get_cli.dart';
-import 'package:get_cli/samples/impl/generate_locales.dart';
 import 'package:path/path.dart';
+
+import '../../../../common/utils/logger/log_utils.dart';
+import '../../../../core/internationalization.dart';
+import '../../../../core/locales.g.dart';
+import '../../../../core/structure.dart';
+import '../../../../exception_handler/exceptions/cli_exception.dart';
+import '../../../../get_cli.dart';
+import '../../../../samples/impl/generate_locales.dart';
+import '../../../interface/command.dart';
 
 class GenerateLocalesCommand extends Command {
   @override
-  String get hint => 'Generate a localization file';
+  String get commandName => 'locales';
+  @override
+  String? get hint => Translation(LocaleKeys.hint_generate_locales).tr;
 
   @override
   bool validate() {
-    final isValid = GetCli.arguments.length > 2;
-    if (!isValid) {
-      LogService.error('you need to provide a locales input files dirname.');
-    }
-    return isValid;
+    return true;
   }
 
   @override
   Future<void> execute() async {
-    final inputPath = GetCli.arguments[2];
+    final inputPath = args.isNotEmpty ? args.first : 'assets/locales';
 
     if (!await Directory(inputPath).exists()) {
-      LogService.error('${inputPath} directory does not exist.');
+      LogService.error(
+          LocaleKeys.error_nonexistent_directory.trArgs([inputPath]));
       return;
     }
 
     final files = await Directory(inputPath)
         .list(recursive: false)
-        .where((FileSystemEntity entry) => entry.path.endsWith('.json'))
+        .where((entry) => entry.path.endsWith('.json'))
         .toList();
 
     if (files.isEmpty) {
-      LogService.info('input directory is empty.');
+      LogService.info(LocaleKeys.error_empty_directory.trArgs([inputPath]));
       return;
     }
 
-    final maps = Map<String, Map<String, dynamic>>();
+    final maps = <String, Map<String, dynamic>?>{};
     for (var file in files) {
       try {
         final map = jsonDecode(await File(file.path).readAsString());
-        final localeKey = basename(file.path).split('.').first;
-        maps[localeKey] = map;
-      } catch (e) {
-        LogService.error('${file.path} is not a valid json file\n$e');
-        return;
+        final localeKey = basenameWithoutExtension(file.path);
+        maps[localeKey] = map as Map<String, dynamic>?;
+      } on Exception catch (_) {
+        LogService.error(LocaleKeys.error_invalid_json.trArgs([file.path]));
+        rethrow;
       }
     }
 
-    final locales = Map<String, Map<String, String>>();
+    final locales = <String, Map<String, String>>{};
     maps.forEach((key, value) {
-      final result = Map<String, String>();
-      _resolve(value, result);
+      final result = <String, String>{};
+      _resolve(value!, result);
       locales[key] = result;
     });
 
-    final keys = Set<String>();
+    final keys = <String>{};
     locales.forEach((key, value) {
       value.forEach((key, value) {
         keys.add(key);
@@ -66,47 +70,65 @@ class GenerateLocalesCommand extends Command {
     });
 
     final parsedKeys =
-        keys.map((e) => '  static const $e = \'$e\';').join('\n');
+        keys.map((e) => '\tstatic const $e = \'$e\';').join('\n');
 
-    var parsedLocales = '\n';
-    var translationsKeys = '';
+    final parsedLocales = StringBuffer('\n');
+    final translationsKeys = StringBuffer();
     locales.forEach((key, value) {
-      parsedLocales += '  static const $key = {\n';
-      translationsKeys += '    \'$key\' : Locales.$key,\n';
+      parsedLocales.writeln('\tstatic const $key = {');
+      translationsKeys.writeln('\t\t\'$key\' : Locales.$key,');
       value.forEach((key, value) {
-        parsedLocales += '   \'$key\': \'$value\',\n';
+        value = _replaceValue(value);
+        if (RegExp(r'^[0-9]|[!@#<>?":`~;[\]\\|=+)(*&^%-\s]').hasMatch(key)) {
+          throw CliException(
+              LocaleKeys.error_special_characters_in_key.trArgs([key]));
+        }
+        parsedLocales.writeln('\t\t\'$key\': \'$value\',');
       });
-      parsedLocales += '  };\n';
+      parsedLocales.writeln('\t};');
     });
 
-    try {
-      await GenerateLocalesSample(parsedKeys, parsedLocales, translationsKeys)
-          .create();
-    } catch (e) {
-      LogService.error('''
-❌ Error! localization file is not created.
-$e
-''');
-      return;
-    }
+    var _fileModel =
+        Structure.model('locales', 'generate_locales', false, on: onCommand);
 
-    LogService.success('locale files generated successfully.');
+    GenerateLocalesSample(
+            parsedKeys, parsedLocales.toString(), translationsKeys.toString(),
+            path: '${_fileModel.path}.g.dart')
+        .create();
+
+    LogService.success(LocaleKeys.sucess_locale_generate.tr);
   }
 
-  void _resolve(Map<String, dynamic> localization, Map<String, String> result,
-      [String accKey]) {
+  void _resolve(Map<String, dynamic> localization, Map<String, String?> result,
+      [String? accKey]) {
     final sortedKeys = localization.keys.toList();
 
     for (var key in sortedKeys) {
       if (localization[key] is Map) {
         var nextAccKey = key;
         if (accKey != null) {
-          nextAccKey = '${accKey}_${key}';
+          nextAccKey = '${accKey}_$key';
         }
-        _resolve(localization[key], result, nextAccKey);
+        _resolve(localization[key] as Map<String, dynamic>, result, nextAccKey);
       } else {
-        result[accKey != null ? '${accKey}_${key}' : key] = localization[key];
+        result[accKey != null ? '${accKey}_$key' : key] =
+            localization[key] as String?;
       }
     }
   }
+
+  @override
+  String? get codeSample =>
+      LogService.code('get generate locales assets/locales \n'
+          'get generate locales assets/locales on locales');
+
+  @override
+  int get maxParameters => 1;
+}
+
+String _replaceValue(String value) {
+  return value
+      .replaceAll("'", "\\'")
+      .replaceAll('\n', '\\n')
+      .replaceAll('\$', '\\\$');
 }

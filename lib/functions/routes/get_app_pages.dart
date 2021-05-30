@@ -1,65 +1,134 @@
+import 'dart:convert';
 import 'dart:io';
 
-import 'package:get_cli/common/utils/pubspec/pubspec_utils.dart';
-import 'package:get_cli/functions/find_file/find_file_by_name.dart';
-import 'package:get_cli/samples/impl/get_app_pages.dart';
 import 'package:recase/recase.dart';
 
-Future<void> addAppPage(String name, String path) async {
-  File appPagesFile = findFileByName('app_pages.dart');
-  if (appPagesFile == null) {
-    await AppPagesSample().create();
+import '../../common/utils/logger/log_utils.dart';
+import '../../common/utils/pubspec/pubspec_utils.dart';
+import '../../samples/impl/get_app_pages.dart';
+import '../create/create_single_file.dart';
+import '../find_file/find_file_by_name.dart';
+import '../formatter_dart_file/frommatter_dart_file.dart';
+import 'get_support_children.dart';
+
+void addAppPage(String name, String bindingDir, String viewDir) {
+  var appPagesFile = findFileByName('app_pages.dart');
+  var path = viewDir;
+  var lines = <String>[];
+  if (appPagesFile.path.isEmpty) {
+    AppPagesSample().create(skipFormatter: true);
     appPagesFile = File(AppPagesSample().path);
-  }
-  var lines = await appPagesFile.readAsLinesSync();
-
-  while (lines.last.isEmpty) {
-    lines.removeLast();
-  }
-
-  /* 
-  Verificar se as utimas linha segue o padrão esperado.
-  exemplo: 
-        ), // finalizar o getPage 
-      ]; // finalizar o array de pages
-    } // finaliza a classe
-
-    exemplos de fora do padrão:
-    ),];} // tudo na mesma linha
-  */
-  if (lines.last.trim() != '}') {
-    lines.last = lines.last.replaceAll('}', '');
-    lines.add('}');
-  }
-  int indexClassRoutes =
-      lines.indexWhere((element) => element.contains('class AppPages'));
-  int index =
-      lines.indexWhere((element) => element.contains('];'), indexClassRoutes);
-  if (lines[index].trim() != '];') {
-    lines[index] = lines[index].replaceAll('];', '');
-    index++;
-    lines.insert(index, '  ];');
+    lines = appPagesFile.readAsLinesSync();
+  } else {
+    var content = formatterDartFile(appPagesFile.readAsStringSync());
+    lines = LineSplitter.split(content).toList();
   }
 
-  String nameSnakeCase = name.snakeCase;
-  String namePascalCase = name.pascalCase;
-  String line = '''    GetPage(
-      name: Routes.${nameSnakeCase.toUpperCase()}, 
-      page:()=> ${namePascalCase}View(), 
-      binding: ${namePascalCase}Binding(),
-    ),''';
+  var routesOrPath = 'Routes';
 
-  String import =
-      "import 'package:${await PubspecUtils.getProjectName()}/$path";
+  var indexRoutes = lines
+      .indexWhere((element) => element.trim().contains('static final routes'));
+  var index =
+      lines.indexWhere((element) => element.contains('];'), indexRoutes);
 
-  // String import = Directory(Structure.replaceAsExpected(
-  //             path: Directory.current.path + '/lib/pages/'))
-  //         .existsSync()
-  //     ? 'pages'
-  //     : 'modules';
+  var tabEspaces = 2;
+  if (supportChildrenRoutes) {
+    routesOrPath = '_Paths';
+    var pathSplit = path.split('/');
+    pathSplit.removeLast();
+    pathSplit.removeLast();
+    pathSplit
+        .removeWhere((element) => element == 'app' || element == 'modules');
+    var onPageIndex = -1;
+    while (pathSplit.isNotEmpty && onPageIndex == -1) {
+      onPageIndex = lines.indexWhere(
+          (element) => element
+              .contains('_Paths.${pathSplit.last.snakeCase.toUpperCase()},'),
+          indexRoutes);
+
+      pathSplit.removeLast();
+    }
+    if (onPageIndex != -1) {
+      var onPageStartIndex = lines
+          .sublist(0, onPageIndex)
+          .lastIndexWhere((element) => element.contains('GetPage'));
+
+      var onPageEndIndex = -1;
+
+      if (onPageStartIndex != -1) {
+        onPageEndIndex = lines.indexWhere(
+            (element) => element.startsWith(
+                '${_getTabs(_countTabs(lines[onPageStartIndex]))}),'),
+            onPageStartIndex);
+      } else {
+        _logInvalidFormart();
+      }
+      if (onPageEndIndex != -1) {
+        var indexChildrenStart = lines
+            .sublist(onPageStartIndex, onPageEndIndex)
+            .indexWhere((element) => element.contains('children'));
+        if (indexChildrenStart == -1) {
+          tabEspaces = _countTabs(lines[onPageStartIndex]) + 1;
+          index = onPageEndIndex;
+          lines.insert(index, '${_getTabs(tabEspaces)}children: [');
+          index++;
+          lines.insert(index, '${_getTabs(tabEspaces)}],');
+          tabEspaces++;
+        } else {
+          var indexChildrenEnd = -1;
+          indexChildrenEnd = lines.indexWhere(
+              (element) => element.startsWith(
+                  '${_getTabs(_countTabs(lines[onPageStartIndex]) + 1)}],'),
+              onPageStartIndex);
+          if (indexChildrenEnd != -1) {
+            index = indexChildrenEnd;
+            tabEspaces = _countTabs(lines[onPageStartIndex]) + 2;
+          } else {
+            _logInvalidFormart();
+          }
+        }
+      } else {
+        _logInvalidFormart();
+      }
+    }
+  }
+  var nameSnakeCase = name.snakeCase;
+  var namePascalCase = name.pascalCase;
+  var line = '''${_getTabs(tabEspaces)}GetPage(
+${_getTabs(tabEspaces + 1)}name: $routesOrPath.${nameSnakeCase.toUpperCase()}, 
+${_getTabs(tabEspaces + 1)}page:()=> ${namePascalCase}View(), 
+${_getTabs(tabEspaces + 1)}binding: ${namePascalCase}Binding(),
+${_getTabs(tabEspaces)}),''';
+
+  var import = "import 'package:${PubspecUtils.projectName}/";
+
   lines.insert(index, line);
-  lines.insert(0, import + "_binding.dart';");
-  lines.insert(0, import + "_view.dart';");
 
-  await appPagesFile.writeAsStringSync(lines.join('\n'));
+  lines.insert(0, "$import$bindingDir';");
+  lines.insert(0, "$import$viewDir';");
+
+  writeFile(appPagesFile.path, lines.join('\n'),
+      overwrite: true, logger: false);
+}
+
+/// Create a tab line
+/// ```
+/// _getTabs(2)   // '    ';
+/// ```
+String _getTabs(int tabEspaces) {
+  return '  ' * tabEspaces;
+}
+
+/// count the tabs on the line
+int _countTabs(String line) {
+  return '  '.allMatches(line).length;
+}
+
+/// log invalid format file
+void _logInvalidFormart() {
+  LogService.info(
+      'the app_pages.dart file does not meet the '
+      'expected format, fails to create children pages',
+      false,
+      false);
 }
